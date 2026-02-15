@@ -13,8 +13,8 @@ function SkinList() {
       try {
         setLoading(true);
 
-        // Ask the API for skins with IDs 1-20
-        const skinIds = Array.from({ length: 20 }, (_, i) => i + 1).join(",");
+        // Ask the API for skins with IDs 1-50
+        const skinIds = Array.from({ length: 50 }, (_, i) => i + 1).join(",");
         const response = await axios.get(
           `https://api.guildwars2.com/v2/skins?ids=${skinIds}`,
         );
@@ -45,12 +45,23 @@ function SkinList() {
   return (
     <div>
       <h2>Guild Wars 2 Skins</h2>
-      <p>Found {skins.length} skins</p>
+      <p>Found {skins.length + 1} skins</p>
 
       <ul>
         {skins.map((skin) => (
-          <li key={skin.id}>
-            <strong>ID {skin.id}:</strong> {skin.name}
+          <li
+            key={skin.id}
+            style={{
+              marginBottom: "10px",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+            }}
+          >
+            <img src={skin.icon} alt={skin.name} width="64" height="64" />
+            <span>
+              <strong>ID {skin.id}:</strong> {skin.name}
+            </span>
           </li>
         ))}
       </ul>
