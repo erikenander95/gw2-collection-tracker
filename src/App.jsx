@@ -1,10 +1,11 @@
+import SkinList from "./SkinList";
 import "./App.css";
 
 function App() {
   return (
-    <div className="app">
+    <div className="App">
       <h1>GW2 Collection Tracker</h1>
-      <p>Track your Guild Wars 2 unlocks</p>
+      <SkinList />
     </div>
   );
 }
