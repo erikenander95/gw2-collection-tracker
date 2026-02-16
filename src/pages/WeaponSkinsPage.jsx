@@ -20,6 +20,100 @@ function WeaponSkinsPage() {
       try {
         setLoading(true);
 
+        // Helper function to clean item names
+        const cleanItemName = (name) => {
+          const statPrefixes = [
+            "Mighty",
+            "Precise",
+            "Vigorous",
+            "Malign",
+            "Healing",
+            "Tough",
+            "Vital",
+            "Hearty",
+            "Ravaging",
+            "Rejuvenating",
+            "Honed",
+            "Strong",
+            "Potent",
+            "Enduring",
+            "Forsaken",
+            "Berserker's",
+            "Rampager's",
+            "Soldier's",
+            "Settler's",
+            "Cleric's",
+            "Magi's",
+            "Shaman's",
+            "Knight's",
+            "Cavalier's",
+            "Nomad's",
+            "Sentinel's",
+            "Giver's",
+            "Carrion",
+            "Rabid",
+            "Dire",
+            "Mending",
+            "Apothecary's",
+            "Sinister",
+            "Celestial",
+            "Trailblazer's",
+            "Commander's",
+            "Wanderer's",
+            "Marauder's",
+            "Crusader's",
+            "Viper's",
+            "Seraph's",
+            "Marshal's",
+            "Harrier's",
+            "Grieving",
+            "Zealot's",
+            "Minstrel's",
+            "Diviner's",
+            "Valkyrie",
+            "Assassin's",
+          ];
+
+          // Try to remove stat prefix from the beginning
+          for (const prefix of statPrefixes) {
+            if (name.startsWith(prefix + " ")) {
+              return name.substring(prefix.length + 1); // Remove prefix + space
+            }
+          }
+
+          return name; // No prefix found, return original
+        };
+
+        // ===== CACHING LOGIC - ADD THIS =====
+        const CACHE_KEY = "weaponSkinsCache";
+        const CACHE_TIME_KEY = "weaponSkinsCacheTime";
+        const ONE_DAY = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+        // Check for cached data
+        const cachedData = localStorage.getItem(CACHE_KEY);
+        const cacheTimestamp = localStorage.getItem(CACHE_TIME_KEY);
+        const now = Date.now();
+
+        // If cache exists and is less than 24 hours old, use it!
+        if (cachedData && cacheTimestamp) {
+          const cacheAge = now - parseInt(cacheTimestamp);
+          if (cacheAge < ONE_DAY) {
+            console.log(
+              "✅ Loading from cache (cache age: " +
+                Math.round(cacheAge / 1000 / 60) +
+                " minutes)",
+            );
+            setAllSkins(JSON.parse(cachedData));
+            setLoading(false);
+            return; // Exit early - don't fetch!
+          } else {
+            console.log("⏰ Cache expired, fetching fresh data...");
+          }
+        } else {
+          console.log("🔄 No cache found, fetching fresh data...");
+        }
+        // ===== END CACHING LOGIC =====
+
         // Step 1: Get all item IDs
         const itemIdsResponse = await axios.get(
           "https://api.guildwars2.com/v2/items",
@@ -47,13 +141,142 @@ function WeaponSkinsPage() {
 
         console.log("All items fetched! Processing weapons...");
 
-        // Step 3: Filter to only weapons that have skins
-        const weaponItems = allItemsData.filter(
-          (item) => item.type === "Weapon" && item.default_skin,
+        // DEBUG: Find all Hero items in raw data BEFORE filtering
+        const allHeroItems = allItemsData.filter(
+          (item) =>
+            item.type === "Weapon" && item.name && item.name.includes("Hero"),
+        );
+        console.log(
+          "🔍 ALL Hero weapons in API (before filtering):",
+          allHeroItems,
+        );
+        console.log("🔍 Count:", allHeroItems.length);
+
+        // DEBUG: Check one specific Hero item in detail
+        const heroGreatsword = allItemsData.find(
+          (item) => item.name === "Hero's Greatsword" && item.rarity === "Rare",
         );
 
+        if (heroGreatsword) {
+          console.log("🔍 Found Hero's Greatsword:", {
+            name: heroGreatsword.name,
+            type: heroGreatsword.type,
+            hasDefaultSkin: !!heroGreatsword.default_skin,
+            hasDetails: !!heroGreatsword.details,
+            hasWeaponType: !!heroGreatsword.details?.type,
+            weaponType: heroGreatsword.details?.type,
+            hasMinPower: !!heroGreatsword.details?.min_power,
+            hasinfix_upgrade: !!heroGreatsword.details?.infix_upgrade,
+            hasStatChoices: !!heroGreatsword.details?.stat_choices,
+            statChoicesLength: heroGreatsword.details?.stat_choices?.length,
+            rarity: heroGreatsword.rarity,
+            flags: heroGreatsword.flags,
+          });
+        }
+
+        // Step 3: Filter to only REAL weapons that have skins
+        const weaponItems = allItemsData.filter((item) => {
+          // Must be a weapon with a skin
+          if (item.type !== "Weapon" || !item.default_skin) {
+            return false;
+          }
+
+          // Must have a valid name (not blank, not just numbers)
+          if (
+            !item.name ||
+            item.name.trim() === "" ||
+            /^\(\(\d+\)\)$/.test(item.name)
+          ) {
+            return false;
+          }
+
+          // Must have weapon details (real weapons have this)
+          if (!item.details || !item.details.type) {
+            return false;
+          }
+
+          // Only include items that are actually usable in combat
+          // Real weapons have min_power and max_power
+          if (!item.details.min_power || !item.details.max_power) {
+            return false;
+          }
+
+          // NEW: Exclude quest/story/special items
+          // These often have "NoSell" flag but no tradeable equivalent
+          if (
+            item.flags &&
+            item.flags.includes("NoSell") &&
+            item.flags.includes("AccountBound")
+          ) {
+            // If it's both NoSell AND AccountBound, likely a quest item
+            // UNLESS it also has SoulbindOnAcquire (which real weapons have)
+            if (
+              !item.flags.includes("SoulbindOnAcquire") &&
+              !item.flags.includes("SoulBindOnUse")
+            ) {
+              return false;
+            }
+          }
+
+          // NEW: Exclude items with specific "junk" keywords
+          const excludeKeywords = [
+            "fireworks",
+            "scanner",
+            "adjuster",
+            "polarizer",
+            "box of fun",
+            "caladbolg", // Story-specific, not normally obtainable
+            "gladiator weapon", // PvP only
+          ];
+
+          const nameLower = item.name.toLowerCase();
+          if (excludeKeywords.some((keyword) => nameLower.includes(keyword))) {
+            return false;
+          }
+
+          // NEW: Must have an infix upgrade OR be ascended/legendary
+          // Real weapons have stats (infix_upgrade) or are special (ascended/legendary)
+          if (
+            !item.details.infix_upgrade &&
+            !item.details.stat_choices &&
+            item.rarity !== "Ascended" &&
+            item.rarity !== "Legendary"
+          ) {
+            return false;
+          }
+
+          // NEW: Must have a valid weapon type
+          const validWeaponTypes = [
+            "Axe",
+            "Dagger",
+            "Mace",
+            "Pistol",
+            "Scepter",
+            "Sword",
+            "Focus",
+            "Shield",
+            "Torch",
+            "Warhorn",
+            "Greatsword",
+            "Hammer",
+            "Longbow",
+            "Rifle",
+            "ShortBow",
+            "Staff",
+            "Harpoon",
+            "Speargun",
+            "Trident",
+          ];
+
+          if (!validWeaponTypes.includes(item.details.type)) {
+            return false;
+          }
+
+          return true;
+        });
+
         // Step 4: Get unique skins (multiple items can share the same skin)
-        // We'll keep the highest rarity item for each skin
+        // We'll keep the LOWEST rarity item for each skin (easiest to obtain)
         const skinMap = new Map();
 
         const rarityOrder = {
@@ -75,10 +298,10 @@ function WeaponSkinsPage() {
             !existingSkin ||
             rarityOrder[item.rarity] < rarityOrder[existingSkin.rarity]
           ) {
-            // Store item data with skin ID
+            // Store item data with skin ID (lowest rarity wins)
             skinMap.set(skinId, {
               id: skinId,
-              name: item.name,
+              name: cleanItemName(item.name), // ← Clean the name!
               icon: item.icon,
               rarity: item.rarity,
               chat_link: item.chat_link,
@@ -90,7 +313,25 @@ function WeaponSkinsPage() {
         // Step 5: Convert map to array
         const weaponSkins = Array.from(skinMap.values());
 
-        console.log("Weapon skins processed:", weaponSkins.length);
+        console.log("✅ Weapon skins processed:", weaponSkins.length);
+
+        // DEBUG: Check how many Hero items survived filtering
+        const heroSkins = weaponSkins.filter((s) => s.name.includes("Hero"));
+        console.log(
+          "🔍 Hero items AFTER filtering and deduplication:",
+          heroSkins,
+        );
+        console.log("🔍 Hero skins count AFTER:", heroSkins.length);
+
+        // ===== SAVE TO CACHE - ADD THIS =====
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(weaponSkins));
+          localStorage.setItem(CACHE_TIME_KEY, now.toString());
+          console.log("💾 Saved to cache!");
+        } catch (e) {
+          console.error("❌ Failed to save to cache:", e);
+        }
+        // ===== END SAVE TO CACHE =====
 
         setAllSkins(weaponSkins);
         setLoading(false);
@@ -102,8 +343,7 @@ function WeaponSkinsPage() {
     };
 
     fetchAllWeaponSkins();
-  }, []); // Empty dependency array - runs once on mount
-
+  }, []);
   // Fetch user's unlocked skins when API key changes
   useEffect(() => {
     const resetAndFetch = async () => {
